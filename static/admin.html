@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Helpdesk — Admin</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+        color: #1a1a1a;
+      }
+      h1 { font-size: 1.4rem; }
+      h2 { font-size: 1.1rem; margin-top: 2rem; }
+      fieldset { border: 1px solid #ddd; border-radius: 8px; margin: 1rem 0; }
+      label { display: block; font-size: 0.85rem; margin: 0.6rem 0 0.2rem; color: #444; }
+      input, textarea, select, button {
+        font: inherit;
+        width: 100%;
+        padding: 0.5rem 0.6rem;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        box-sizing: border-box;
+      }
+      textarea { min-height: 5rem; }
+      button {
+        width: auto;
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        padding: 0.55rem 1.1rem;
+        margin-top: 0.8rem;
+      }
+      button.secondary { background: #6b7280; }
+      button:hover { opacity: 0.9; }
+      .row { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+      .row > * { flex: 1; min-width: 160px; }
+      .msg { padding: 0.6rem 0.8rem; border-radius: 6px; margin: 0.6rem 0; display: none; }
+      .msg.ok { background: #ecfdf5; color: #065f46; display: block; }
+      .msg.err { background: #fef2f2; color: #991b1b; display: block; }
+      .pair { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.8rem; margin: 0.6rem 0; }
+      table { width: 100%; border-collapse: collapse; margin-top: 0.6rem; }
+      th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+      .status-draft { color: #b45309; }
+      .status-published { color: #059669; }
+      small { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h1>Helpdesk — Administração</h1>
+    <p><small>As credenciais são pedidas pelo navegador (HTTP Basic) na primeira ação.</small></p>
+    <div id="msg" class="msg"></div>
+
+    <h2>1. Importar conversa do WhatsApp</h2>
+    <fieldset>
+      <label>Cole aqui o texto exportado do grupo (.txt "Exportar conversa")</label>
+      <textarea id="ingest-raw" placeholder="[01/07/2026, 10:15] João: Como faço X?..."></textarea>
+      <button onclick="doIngest()">Extrair perguntas &amp; respostas</button>
+      <small id="ingest-note"></small>
+      <div id="pairs"></div>
+    </fieldset>
+
+    <h2>2. Nova pergunta</h2>
+    <fieldset>
+      <label>Título</label>
+      <input id="q-title" />
+      <label>Corpo / detalhes (opcional)</label>
+      <textarea id="q-body"></textarea>
+      <div class="row">
+        <div>
+          <label>Assunto (grupo)</label>
+          <select id="q-group"></select>
+        </div>
+        <div>
+          <label>Autor (quem perguntou)</label>
+          <input id="q-author" />
+        </div>
+        <div>
+          <label>Status</label>
+          <select id="q-status">
+            <option value="published">Publicado</option>
+            <option value="draft">Rascunho</option>
+          </select>
+        </div>
+      </div>
+      <label>Resposta (opcional, cria junto)</label>
+      <textarea id="q-answer"></textarea>
+      <button onclick="createQuestion()">Salvar pergunta</button>
+    </fieldset>
+
+    <h2>Novo assunto (grupo)</h2>
+    <fieldset>
+      <div class="row">
+        <div><label>Nome</label><input id="g-name" /></div>
+        <div><label>&nbsp;</label><button onclick="createGroup()">Criar grupo</button></div>
+      </div>
+    </fieldset>
+
+    <h2>Perguntas cadastradas</h2>
+    <button class="secondary" onclick="loadQuestions()">Atualizar lista</button>
+    <table id="q-table"><tbody></tbody></table>
+
+    <script>
+      // Credentials are cached in memory only, sent as HTTP Basic on each call.
+      var auth = null;
+      function creds() {
+        if (!auth) {
+          var u = prompt("Usuário admin:");
+          var p = prompt("Senha admin:");
+          auth = "Basic " + btoa(u + ":" + p);
+        }
+        return auth;
+      }
+      function api(path, method, body) {
+        return fetch(path, {
+          method: method || "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: creds(),
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        }).then(function (r) {
+          if (r.status === 401) {
+            auth = null;
+            throw new Error("Credenciais inválidas");
+          }
+          if (!r.ok) return r.json().then(function (e) { throw new Error(e.detail || r.status); });
+          return r.json();
+        });
+      }
+      function flash(text, ok) {
+        var m = document.getElementById("msg");
+        m.textContent = text;
+        m.className = "msg " + (ok ? "ok" : "err");
+        setTimeout(function () { m.className = "msg"; }, 4000);
+      }
+
+      function loadGroups() {
+        return fetch("/api/groups").then(function (r) { return r.json(); }).then(function (gs) {
+          var sel = document.getElementById("q-group");
+          sel.innerHTML = '<option value="">— sem assunto —</option>' +
+            gs.map(function (g) { return '<option value="' + g.id + '">' + g.name + "</option>"; }).join("");
+          return gs;
+        });
+      }
+
+      function createGroup() {
+        var name = document.getElementById("g-name").value.trim();
+        if (!name) return flash("Informe o nome do grupo", false);
+        api("/api/admin/groups", "POST", { name: name })
+          .then(function () { document.getElementById("g-name").value = ""; loadGroups(); flash("Grupo criado", true); })
+          .catch(function (e) { flash(e.message, false); });
+      }
+
+      function createQuestion() {
+        var q = {
+          title: document.getElementById("q-title").value.trim(),
+          body: document.getElementById("q-body").value.trim() || null,
+          group_id: parseInt(document.getElementById("q-group").value) || null,
+          author: document.getElementById("q-author").value.trim() || null,
+          status: document.getElementById("q-status").value,
+        };
+        if (!q.title) return flash("Título obrigatório", false);
+        var answer = document.getElementById("q-answer").value.trim();
+        api("/api/admin/questions", "POST", q).then(function (res) {
+          if (answer) return api("/api/admin/questions/" + res.id + "/answers", "POST", { body: answer, is_accepted: true });
+        }).then(function () {
+          ["q-title", "q-body", "q-author", "q-answer"].forEach(function (id) { document.getElementById(id).value = ""; });
+          flash("Pergunta salva", true);
+          loadQuestions();
+        }).catch(function (e) { flash(e.message, false); });
+      }
+
+      function loadQuestions() {
+        api("/api/admin/questions").then(function (qs) {
+          document.querySelector("#q-table tbody").innerHTML = qs.map(function (q) {
+            return "<tr><td>" + q.id + "</td><td>" + q.title + "</td><td>" + (q.group_name || "—") +
+              '</td><td class="status-' + q.status + '">' + q.status + "</td><td>" + q.answer_count + "</td>" +
+              '<td><button class="secondary" style="padding:.2rem .5rem" onclick="delQuestion(' + q.id + ')">excluir</button></td></tr>";
+          }).join("");
+        }).catch(function (e) { flash(e.message, false); });
+      }
+      function delQuestion(id) {
+        api("/api/admin/questions/" + id, "DELETE").then(function () { flash("Excluída", true); loadQuestions(); })
+          .catch(function (e) { flash(e.message, false); });
+      }
+
+      function doIngest() {
+        var raw = document.getElementById("ingest-raw").value;
+        if (!raw.trim()) return flash("Cole o texto exportado", false);
+        document.getElementById("ingest-note").textContent = "Processando...";
+        api("/api/admin/ingest", "POST", { raw: raw }).then(function (res) {
+          var note = document.getElementById("ingest-note");
+          var box = document.getElementById("pairs");
+          if (res.ai && res.pairs.length) {
+            note.textContent = res.pairs.length + " par(es) extraído(s) pela IA. Revise e salve os úteis.";
+            box.innerHTML = res.pairs.map(renderPair).join("");
+          } else if (res.ai) {
+            note.textContent = "IA não encontrou pares reutilizáveis.";
+            box.innerHTML = "";
+          } else {
+            note.textContent = (res.messages ? res.messages.length : 0) +
+              " mensagens reconhecidas. (Sem ANTHROPIC_API_KEY: monte os pares manualmente na seção 2.)";
+            box.innerHTML = "";
+          }
+        }).catch(function (e) {
+          document.getElementById("ingest-note").textContent = "";
+          flash(e.message, false);
+        });
+      }
+
+      // Render an AI-suggested pair with an inline "save" that reuses the endpoints.
+      function renderPair(p, i) {
+        var id = "pair-" + i;
+        window["_pair_" + i] = p;
+        return '<div class="pair" id="' + id + '">' +
+          "<label>Título</label><input value=\"" + escAttr(p.title || "") + "\" data-f=title>" +
+          "<label>Pergunta</label><textarea data-f=question>" + escHtml(p.question || "") + "</textarea>" +
+          "<label>Resposta</label><textarea data-f=answer>" + escHtml(p.answer || "") + "</textarea>" +
+          "<div class=row><div><label>Assunto sugerido</label><input value=\"" + escAttr(p.group || "") + "\" data-f=group></div>" +
+          "<div><label>Autor</label><input value=\"" + escAttr(p.asked_by || "") + "\" data-f=author></div></div>" +
+          '<button onclick="savePair(\'' + id + '\')">Salvar este par</button>' +
+          '<button class="secondary" onclick="document.getElementById(\'' + id + '\').remove()">Descartar</button></div>';
+      }
+      function fieldVal(root, name) {
+        var el = root.querySelector("[data-f=" + name + "]");
+        return el ? el.value.trim() : "";
+      }
+      function savePair(id) {
+        var root = document.getElementById(id);
+        var groupName = fieldVal(root, "group");
+        var title = fieldVal(root, "title") || fieldVal(root, "question").slice(0, 80);
+        var question = fieldVal(root, "question");
+        var answer = fieldVal(root, "answer");
+        var author = fieldVal(root, "author");
+        // Find or create the suggested group, then create question + answer.
+        loadGroups().then(function (gs) {
+          var match = gs.filter(function (g) { return g.name.toLowerCase() === groupName.toLowerCase(); })[0];
+          if (match || !groupName) return match ? match.id : null;
+          return api("/api/admin/groups", "POST", { name: groupName }).then(function (r) { return r.id; });
+        }).then(function (gid) {
+          return api("/api/admin/questions", "POST", {
+            title: title, body: question, group_id: gid, author: author, status: "published",
+          });
+        }).then(function (res) {
+          if (answer) return api("/api/admin/questions/" + res.id + "/answers", "POST", { body: answer, is_accepted: true });
+        }).then(function () {
+          root.remove();
+          flash("Par salvo e publicado", true);
+          loadGroups();
+          loadQuestions();
+        }).catch(function (e) { flash(e.message, false); });
+      }
+
+      function escHtml(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+      function escAttr(s) { return String(s).replace(/"/g, "&quot;"); }
+
+      loadGroups();
+    </script>
+  </body>
+</html>
