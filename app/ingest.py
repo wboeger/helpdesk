@@ -81,6 +81,45 @@ def extract_qa(messages: list[dict]) -> dict:
     return {"pairs": pairs, "ai": True}
 
 
+def extract_qa_freeform(raw: str) -> dict:
+    """Extract Q&A pairs from arbitrary pasted text (not a WhatsApp export):
+    FAQs, policy docs, articles, plain notes, etc. Returns {"pairs": [...], "ai": True}.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {"pairs": [], "ai": False, "messages": []}
+
+    from anthropic import Anthropic
+
+    text_in = raw[:120_000]
+    prompt = (
+        "Você recebe um texto em português (pode ser um documento, FAQ, "
+        "artigo, anotações ou qualquer conteúdo colado por um usuário — não "
+        "necessariamente uma conversa).\n"
+        "Extraia ou sintetize pares de PERGUNTA e RESPOSTA úteis e "
+        "reutilizáveis a partir desse conteúdo. Se o texto já tiver "
+        "perguntas explícitas, use-as; senão, formule perguntas razoáveis "
+        "que o conteúdo responde.\n"
+        "Para cada par, sugira um título curto, o assunto/grupo, a pergunta "
+        "e a melhor resposta consolidada.\n"
+        "Responda APENAS com JSON no formato:\n"
+        '{"pairs":[{"title":"","group":"","question":"","answer":"",'
+        '"asked_by":"","answered_by":""}]}\n\n'
+        f"Texto:\n{text_in}"
+    )
+
+    client = Anthropic(api_key=api_key)
+    resp = client.messages.create(
+        model=os.getenv("EXTRACT_MODEL", "claude-haiku-4-5-20251001"),
+        max_tokens=8000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text_out = "".join(
+        block.text for block in resp.content if getattr(block, "type", "") == "text"
+    )
+    return {"pairs": _parse_json_pairs(text_out), "ai": True}
+
+
 def _parse_json_pairs(text_out: str) -> list[dict]:
     """Extract the JSON object from a model response, tolerating stray prose."""
     start, end = text_out.find("{"), text_out.rfind("}")

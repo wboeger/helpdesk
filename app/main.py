@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from .db import FTS_CONFIG, engine, init_db
-from .ingest import extract_qa, parse_export
+from .ingest import extract_qa, extract_qa_freeform, parse_export
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -311,15 +311,22 @@ def admin_list_questions(_: str = Depends(require_admin)):
 
 @app.post("/api/admin/ingest")
 def ingest(body: IngestIn, _: str = Depends(require_admin)):
-    """Parse a pasted WhatsApp export and return candidate Q&A pairs.
+    """Parse pasted text and return candidate Q&A pairs.
+
+    Recognises WhatsApp exports (author/timestamp per line) and extracts
+    Q&A from the conversation. Any other pasted text (FAQ docs, articles,
+    notes) falls back to asking the model to extract/synthesize Q&A pairs
+    directly from the raw text.
 
     Nothing is persisted here: the admin reviews the pairs and posts the
     accepted ones back through the normal question/answer endpoints.
     """
+    if not body.raw.strip():
+        raise HTTPException(400, "Cole algum texto")
     messages = parse_export(body.raw)
-    if not messages:
-        raise HTTPException(400, "Nenhuma mensagem reconhecida no texto colado")
-    return extract_qa(messages)
+    if messages:
+        return extract_qa(messages)
+    return extract_qa_freeform(body.raw)
 
 
 # ---------------------------------------------------------------- static

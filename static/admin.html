@@ -54,10 +54,10 @@
     <p><small>As credenciais são pedidas pelo navegador (HTTP Basic) na primeira ação.</small></p>
     <div id="msg" class="msg"></div>
 
-    <h2>1. Importar conversa do WhatsApp</h2>
+    <h2>1. Importar conteúdo (WhatsApp ou qualquer texto)</h2>
     <fieldset>
-      <label>Cole aqui o texto exportado do grupo (.txt "Exportar conversa")</label>
-      <textarea id="ingest-raw" placeholder="[01/07/2026, 10:15] João: Como faço X?..."></textarea>
+      <label>Cole aqui a conversa exportada do WhatsApp (.txt) ou qualquer outro texto — FAQ, documento, anotações. A IA extrai as perguntas e respostas de qualquer um dos dois.</label>
+      <textarea id="ingest-raw" placeholder="[01/07/2026, 10:15] João: Como faço X?...&#10;&#10;ou cole qualquer outro texto aqui"></textarea>
       <button onclick="doIngest()">Extrair perguntas &amp; respostas</button>
       <small id="ingest-note"></small>
       <div id="pairs"></div>
