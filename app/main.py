@@ -142,11 +142,17 @@ def search(q: str, limit: int = 20):
                    plainto_tsquery('{FTS_CONFIG}', :q),
                    'MaxWords=30, MinWords=10, ShortWord=3') AS snippet,
                g.name AS group_name, g.slug AS group_slug,
-               ts_rank(q.search_tsv, plainto_tsquery('{FTS_CONFIG}', :q)) AS rank
+               GREATEST(
+                   ts_rank(q.search_tsv, plainto_tsquery('{FTS_CONFIG}', :q)),
+                   similarity(immutable_unaccent(lower(q.title)), immutable_unaccent(lower(:q)))
+               ) AS rank
         FROM questions q
         LEFT JOIN groups g ON g.id = q.group_id
         WHERE q.status = 'published'
-          AND q.search_tsv @@ plainto_tsquery('{FTS_CONFIG}', :q)
+          AND (
+              q.search_tsv @@ plainto_tsquery('{FTS_CONFIG}', :q)
+              OR similarity(immutable_unaccent(lower(q.title)), immutable_unaccent(lower(:q))) > 0.2
+          )
         ORDER BY rank DESC
         LIMIT :limit
         """

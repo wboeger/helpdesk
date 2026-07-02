@@ -21,6 +21,15 @@ engine = create_engine(_raw_url, pool_pre_ping=True, future=True)
 FTS_CONFIG = "portuguese"
 
 SCHEMA_SQL = f"""
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- unaccent() is STABLE, not IMMUTABLE, so it can't be used directly in an
+-- index expression. Wrap it so the trigram index below is allowed.
+CREATE OR REPLACE FUNCTION immutable_unaccent(text) RETURNS text AS $$
+    SELECT unaccent('unaccent', $1)
+$$ LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT;
+
 CREATE TABLE IF NOT EXISTS groups (
     id        SERIAL PRIMARY KEY,
     name      TEXT NOT NULL,
@@ -52,6 +61,10 @@ CREATE TABLE IF NOT EXISTS answers (
 CREATE INDEX IF NOT EXISTS questions_tsv_idx ON questions USING GIN(search_tsv);
 CREATE INDEX IF NOT EXISTS questions_group_idx ON questions(group_id);
 CREATE INDEX IF NOT EXISTS answers_question_idx ON answers(question_id);
+
+-- Trigram index for typo-tolerant fallback matching on title.
+CREATE INDEX IF NOT EXISTS questions_title_trgm_idx
+    ON questions USING GIN (immutable_unaccent(lower(title)) gin_trgm_ops);
 
 -- Rebuild the search vector from title+body (weight A) plus all answer
 -- bodies (weight B). Called by triggers on both tables.
