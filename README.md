@@ -27,7 +27,18 @@ static/
 
 ## Embed on your homepage
 
-Add these two lines anywhere in your existing HTML page:
+**Option A — `<iframe>` (recommended if your site is built with a framework/CMS
+that re-renders the page, e.g. React, Vue, WordPress page builders).** This
+fully isolates the widget from your page's own DOM updates, which otherwise
+can wipe out the widget's mount point mid-interaction (search box losing
+focus/state):
+
+```html
+<iframe src="https://YOUR-APP.up.railway.app/" style="width:100%;min-height:600px;border:0"></iframe>
+```
+
+**Option B — inline script.** Add these two lines anywhere in your existing
+HTML page:
 
 ```html
 <div id="helpdesk"></div>
@@ -36,6 +47,8 @@ Add these two lines anywhere in your existing HTML page:
 
 Optional `data-target="#some-id"` to mount elsewhere. Deep links use the URL
 hash (`#helpdesk/q/123`), so individual answers are shareable back into WhatsApp.
+Avoid this option if your page framework re-renders the container div — it
+will tear down the widget's internal state.
 
 ## Deploy on Railway
 
