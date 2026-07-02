@@ -22,13 +22,6 @@ FTS_CONFIG = "portuguese"
 
 SCHEMA_SQL = f"""
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE EXTENSION IF NOT EXISTS unaccent;
-
--- unaccent() is STABLE, not IMMUTABLE, so it can't be used directly in an
--- index expression. Wrap it so the trigram index below is allowed.
-CREATE OR REPLACE FUNCTION immutable_unaccent(text) RETURNS text AS $$
-    SELECT unaccent($1)
-$$ LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT;
 
 CREATE TABLE IF NOT EXISTS groups (
     id        SERIAL PRIMARY KEY,
@@ -64,7 +57,13 @@ CREATE INDEX IF NOT EXISTS answers_question_idx ON answers(question_id);
 
 -- Trigram index for typo-tolerant fallback matching on title.
 CREATE INDEX IF NOT EXISTS questions_title_trgm_idx
-    ON questions USING GIN (immutable_unaccent(lower(title)) gin_trgm_ops);
+    ON questions USING GIN (lower(title) gin_trgm_ops);
+
+-- Drop the unaccent-based helper from an earlier attempt: the unaccent
+-- extension isn't reliably available on this managed Postgres and crashed
+-- startup. Plain lower() trigram matching still catches most typos, just
+-- not accent-only differences.
+DROP FUNCTION IF EXISTS immutable_unaccent(text);
 
 -- Rebuild the search vector from title+body (weight A) plus all answer
 -- bodies (weight B). Called by triggers on both tables.
