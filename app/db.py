@@ -27,7 +27,7 @@ CREATE EXTENSION IF NOT EXISTS unaccent;
 -- unaccent() is STABLE, not IMMUTABLE, so it can't be used directly in an
 -- index expression. Wrap it so the trigram index below is allowed.
 CREATE OR REPLACE FUNCTION immutable_unaccent(text) RETURNS text AS $$
-    SELECT unaccent('unaccent', $1)
+    SELECT unaccent($1)
 $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT;
 
 CREATE TABLE IF NOT EXISTS groups (
