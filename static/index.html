@@ -5,11 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Central de Dúvidas</title>
     <style>
+      html, body {
+        height: 100%;
+      }
       body {
         font-family: system-ui, sans-serif;
         margin: 0;
         padding: 2rem 1rem;
         background: #fafafa;
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+      /* Fixed page height + internal scroll, so document height never
+         changes as search results load. Some embed hosts (e.g. Google
+         Sites) reload the iframe when its content height changes, which
+         would otherwise wipe out the search box mid-typing. */
+      #helpdesk {
+        max-height: calc(100vh - 4rem);
+        overflow-y: auto;
       }
     </style>
   </head>
