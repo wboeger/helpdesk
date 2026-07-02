@@ -161,6 +161,21 @@ var COORD_EMAIL = "faunadobrasilctfb@gmail.com";
     });
   }
 
+  // Bold the query's words wherever they occur in already-escaped text,
+  // so matches are visible even when they came from typo/similarity
+  // matching rather than full-text search (which ts_headline highlights
+  // on its own).
+  function highlight(escapedText, q) {
+    var words = (q || "")
+      .trim()
+      .split(/\s+/)
+      .filter(function (w) { return w.length >= 2; })
+      .map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); });
+    if (!words.length) return escapedText;
+    var re = new RegExp("(" + words.join("|") + ")", "gi");
+    return escapedText.replace(re, "<b>$1</b>");
+  }
+
   function renderResults(results, q) {
     var body = el.querySelector(".hd-body");
     if (!results.length) {
@@ -177,7 +192,7 @@ var COORD_EMAIL = "faunadobrasilctfb@gmail.com";
             '<li><a href="#helpdesk/q/' +
             r.id +
             '"><strong>' +
-            esc(r.title) +
+            highlight(esc(r.title), q) +
             "</strong>" +
             (r.group_name
               ? '<span class="hd-tag">' + esc(r.group_name) + "</span>"

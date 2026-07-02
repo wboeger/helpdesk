@@ -144,14 +144,18 @@ def search(q: str, limit: int = 20):
                g.name AS group_name, g.slug AS group_slug,
                GREATEST(
                    ts_rank(q.search_tsv, plainto_tsquery('{FTS_CONFIG}', :q)),
-                   similarity(lower(q.title), lower(:q))
+                   similarity(lower(q.title), lower(:q)),
+                   word_similarity(lower(:q), lower(q.title))
                ) AS rank
         FROM questions q
         LEFT JOIN groups g ON g.id = q.group_id
         WHERE q.status = 'published'
           AND (
               q.search_tsv @@ plainto_tsquery('{FTS_CONFIG}', :q)
-              OR similarity(lower(q.title), lower(:q)) > 0.2
+              OR similarity(lower(q.title), lower(:q)) > 0.15
+              OR word_similarity(lower(:q), lower(q.title)) > 0.3
+              OR lower(q.title) ILIKE '%' || lower(:q) || '%'
+              OR lower(coalesce(q.body, '')) ILIKE '%' || lower(:q) || '%'
           )
         ORDER BY rank DESC
         LIMIT :limit
