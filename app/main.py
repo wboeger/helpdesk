@@ -82,6 +82,12 @@ class IngestIn(BaseModel):
     raw: str
 
 
+class AskIn(BaseModel):
+    title: str
+    body: str | None = None
+    author: str | None = None
+
+
 def _slugify(value: str) -> str:
     import re
 
@@ -176,6 +182,32 @@ def get_question(qid: int):
             {"id": qid},
         ).mappings()
         return {"question": dict(q), "answers": [dict(a) for a in answers]}
+
+
+@app.post("/api/questions/ask")
+def ask_question(a: AskIn):
+    """Public: visitor didn't find an answer, submit it as a draft for
+    coordinators to answer from the admin panel (feeds the knowledge base).
+    """
+    title = a.title.strip()[:300]
+    if not title:
+        raise HTTPException(400, "Pergunta obrigatória")
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                INSERT INTO questions (title, body, author, status)
+                VALUES (:title, :body, :author, 'draft')
+                RETURNING id
+                """
+            ),
+            {
+                "title": title,
+                "body": (a.body or "").strip()[:5000] or None,
+                "author": (a.author or "").strip()[:200] or None,
+            },
+        ).scalar_one()
+    return {"id": row}
 
 
 # ---------------------------------------------------------------- admin write

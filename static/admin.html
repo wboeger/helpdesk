@@ -179,7 +179,7 @@
           document.querySelector("#q-table tbody").innerHTML = qs.map(function (q) {
             return "<tr><td>" + q.id + "</td><td>" + q.title + "</td><td>" + (q.group_name || "—") +
               '</td><td class="status-' + q.status + '">' + q.status + "</td><td>" + q.answer_count + "</td>" +
-              '<td><button class="secondary" style="padding:.2rem .5rem" onclick="delQuestion(' + q.id + ')">excluir</button></td></tr>";
+              '<td><button class="secondary" style="padding:.2rem .5rem" onclick="delQuestion(' + q.id + ')">excluir</button></td></tr>';
           }).join("");
         }).catch(function (e) { flash(e.message, false); });
       }

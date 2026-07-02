@@ -43,7 +43,18 @@ var STYLE =
   ".hd-accepted{background:#ecfdf5;border:1px solid #a7f3d0}" +
   ".hd-check{color:#059669;font-size:.8rem;font-weight:600}" +
   ".hd-loading,.hd-empty{color:#888;padding:1rem 0}" +
+  ".hd-ask{margin-top:.8rem;padding:.9rem;background:#f5f6f8;border-radius:8px}" +
+  ".hd-ask p{margin:0 0 .6rem;font-size:.9rem;color:#444}" +
+  ".hd-ask input,.hd-ask textarea{width:100%;padding:.5rem .6rem;font:inherit;" +
+  "border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:.5rem}" +
+  ".hd-ask textarea{min-height:4rem}" +
+  ".hd-ask button{background:#2563eb;color:#fff;border:none;padding:.5rem 1rem;" +
+  "border-radius:6px;cursor:pointer;font:inherit}" +
+  ".hd-ask button:hover{opacity:.9}" +
+  ".hd-ask .hd-ok{color:#059669;font-size:.85rem;margin-top:.5rem}" +
   "</style>";
+
+var COORD_EMAIL = "faunadobrasilctfb@gmail.com";
 
 (function () {
   var script = document.currentScript;
@@ -107,19 +118,26 @@ var STYLE =
       var q = input.value.trim();
       t = setTimeout(function () {
         if (q.length < 2) {
-          if (!parseHash()) renderHome();
+          if (!parseHash()) renderHomeBody();
           return;
         }
-        api("/api/search?q=" + encodeURIComponent(q)).then(renderResults);
+        api("/api/search?q=" + encodeURIComponent(q)).then(function (results) {
+          renderResults(results, q);
+        });
       }, 250);
     });
     return input;
   }
 
   function renderHome() {
-    shell('<div class="hd-loading">Carregando assuntos...</div>');
+    shell("");
+    renderHomeBody();
+  }
+
+  function renderHomeBody() {
+    var body = el.querySelector(".hd-body");
+    body.innerHTML = '<div class="hd-loading">Carregando assuntos...</div>';
     api("/api/groups").then(function (groups) {
-      var body = el.querySelector(".hd-body");
       if (!groups.length) {
         body.innerHTML = '<p class="hd-empty">Nenhum conteúdo ainda.</p>';
         return;
@@ -143,10 +161,12 @@ var STYLE =
     });
   }
 
-  function renderResults(results) {
+  function renderResults(results, q) {
     var body = el.querySelector(".hd-body");
     if (!results.length) {
-      body.innerHTML = '<p class="hd-empty">Nada encontrado.</p>';
+      body.innerHTML =
+        '<p class="hd-empty">Nada encontrado.</p>' + askForm(q || "");
+      wireAskForm(q || "");
       return;
     }
     body.innerHTML =
@@ -169,6 +189,56 @@ var STYLE =
         })
         .join("") +
       "</ul>";
+  }
+
+  // ---- ask-the-coordinators fallback when search finds nothing ----
+  function askForm(q) {
+    return (
+      '<div class="hd-ask"><p>Não achou sua resposta? Envie a pergunta para a coordenação.</p>' +
+      '<input class="hd-ask-title" placeholder="Sua pergunta" value="' +
+      esc(q).replace(/"/g, "&quot;") +
+      '"><textarea class="hd-ask-body" placeholder="Detalhes (opcional)"></textarea>' +
+      '<input class="hd-ask-author" placeholder="Seu nome ou e-mail (opcional)">' +
+      '<button class="hd-ask-send">Enviar para coordenação</button>' +
+      '<div class="hd-ask-msg"></div></div>'
+    );
+  }
+
+  function wireAskForm() {
+    var box = el.querySelector(".hd-ask");
+    if (!box) return;
+    box.querySelector(".hd-ask-send").addEventListener("click", function () {
+      var title = box.querySelector(".hd-ask-title").value.trim();
+      var qbody = box.querySelector(".hd-ask-body").value.trim();
+      var author = box.querySelector(".hd-ask-author").value.trim();
+      var msg = box.querySelector(".hd-ask-msg");
+      if (!title) {
+        msg.textContent = "Escreva a pergunta.";
+        return;
+      }
+      fetch(apiBase + "/api/questions/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title, body: qbody || null, author: author || null }),
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error();
+          var subject = encodeURIComponent("Pergunta sem resposta: " + title);
+          var mailBody = encodeURIComponent(
+            title + (qbody ? "\n\n" + qbody : "") + (author ? "\n\n— " + author : "")
+          );
+          window.open(
+            "mailto:" + COORD_EMAIL + "?subject=" + subject + "&body=" + mailBody,
+            "_blank"
+          );
+          msg.className = "hd-ok";
+          msg.textContent = "Enviada! A coordenação vai responder em breve.";
+          box.querySelector(".hd-ask-send").disabled = true;
+        })
+        .catch(function () {
+          msg.textContent = "Erro ao enviar. Tente novamente.";
+        });
+    });
   }
 
   function renderGroup(slug) {
