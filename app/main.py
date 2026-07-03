@@ -296,6 +296,61 @@ def add_answer(qid: int, a: AnswerIn, _: str = Depends(require_admin)):
     return {"id": row}
 
 
+@app.get("/api/admin/questions/{qid}")
+def admin_get_question(qid: int, _: str = Depends(require_admin)):
+    with engine.connect() as conn:
+        q = conn.execute(
+            text(
+                """
+                SELECT q.id, q.title, q.body, q.author, q.source_date, q.status, q.group_id,
+                       g.name AS group_name, g.slug AS group_slug
+                FROM questions q LEFT JOIN groups g ON g.id = q.group_id
+                WHERE q.id = :id
+                """
+            ),
+            {"id": qid},
+        ).mappings().first()
+        if not q:
+            raise HTTPException(404, "Pergunta não encontrada")
+        answers = conn.execute(
+            text(
+                """
+                SELECT id, body, author, is_accepted, created_at
+                FROM answers WHERE question_id = :id
+                ORDER BY is_accepted DESC, created_at
+                """
+            ),
+            {"id": qid},
+        ).mappings()
+        return {"question": dict(q), "answers": [dict(a) for a in answers]}
+
+
+@app.patch("/api/admin/answers/{aid}")
+def update_answer(aid: int, a: AnswerIn, _: str = Depends(require_admin)):
+    with engine.begin() as conn:
+        res = conn.execute(
+            text(
+                """
+                UPDATE answers SET body=:body, author=:author, is_accepted=:is_accepted
+                WHERE id=:id
+                """
+            ),
+            {**a.model_dump(), "id": aid},
+        )
+        if res.rowcount == 0:
+            raise HTTPException(404, "Resposta não encontrada")
+    return {"id": aid}
+
+
+@app.delete("/api/admin/answers/{aid}")
+def delete_answer(aid: int, _: str = Depends(require_admin)):
+    with engine.begin() as conn:
+        res = conn.execute(text("DELETE FROM answers WHERE id=:id"), {"id": aid})
+        if res.rowcount == 0:
+            raise HTTPException(404, "Resposta não encontrada")
+    return {"deleted": aid}
+
+
 @app.get("/api/admin/questions")
 def admin_list_questions(_: str = Depends(require_admin)):
     sql = text(

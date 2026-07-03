@@ -91,6 +91,40 @@
       <button onclick="createQuestion()">Salvar pergunta</button>
     </fieldset>
 
+    <h2 id="edit-heading" style="display:none">Editando pergunta #<span id="edit-id"></span></h2>
+    <fieldset id="edit-box" style="display:none">
+      <label>Título</label>
+      <input id="e-title" />
+      <label>Corpo / detalhes (opcional)</label>
+      <textarea id="e-body"></textarea>
+      <div class="row">
+        <div>
+          <label>Assunto (grupo)</label>
+          <select id="e-group"></select>
+        </div>
+        <div>
+          <label>Autor (quem perguntou)</label>
+          <input id="e-author" />
+        </div>
+        <div>
+          <label>Status</label>
+          <select id="e-status">
+            <option value="published">Publicado</option>
+            <option value="draft">Rascunho</option>
+          </select>
+        </div>
+      </div>
+      <button onclick="saveEdit()">Salvar alterações</button>
+      <button class="secondary" onclick="cancelEdit()">Cancelar</button>
+
+      <h2>Respostas</h2>
+      <div id="e-answers"></div>
+
+      <label>Nova resposta</label>
+      <textarea id="e-new-answer"></textarea>
+      <button onclick="addEditAnswer()">Adicionar resposta</button>
+    </fieldset>
+
     <h2>Novo assunto (grupo)</h2>
     <fieldset>
       <div class="row">
@@ -179,13 +213,101 @@
           document.querySelector("#q-table tbody").innerHTML = qs.map(function (q) {
             return "<tr><td>" + q.id + "</td><td>" + q.title + "</td><td>" + (q.group_name || "—") +
               '</td><td class="status-' + q.status + '">' + q.status + "</td><td>" + q.answer_count + "</td>" +
-              '<td><button class="secondary" style="padding:.2rem .5rem" onclick="delQuestion(' + q.id + ')">excluir</button></td></tr>';
+              '<td><button class="secondary" style="padding:.2rem .5rem" onclick="editQuestion(' + q.id + ')">editar</button> ' +
+              '<button class="secondary" style="padding:.2rem .5rem" onclick="delQuestion(' + q.id + ')">excluir</button></td></tr>';
           }).join("");
         }).catch(function (e) { flash(e.message, false); });
       }
       function delQuestion(id) {
         api("/api/admin/questions/" + id, "DELETE").then(function () { flash("Excluída", true); loadQuestions(); })
           .catch(function (e) { flash(e.message, false); });
+      }
+
+      // ---------------- edit question + answers ----------------
+      var editingId = null;
+      function editQuestion(id) {
+        editingId = id;
+        loadGroups().then(function () {
+          return api("/api/admin/questions/" + id);
+        }).then(function (res) {
+          var q = res.question;
+          document.getElementById("edit-id").textContent = q.id;
+          document.getElementById("edit-heading").style.display = "block";
+          document.getElementById("edit-box").style.display = "block";
+          document.getElementById("e-title").value = q.title || "";
+          document.getElementById("e-body").value = q.body || "";
+          document.getElementById("e-author").value = q.author || "";
+          document.getElementById("e-status").value = q.status || "draft";
+          document.getElementById("e-group").innerHTML = document.getElementById("q-group").innerHTML;
+          document.getElementById("e-group").value = q.group_id || "";
+          renderEditAnswers(res.answers);
+          document.getElementById("edit-box").scrollIntoView({ behavior: "smooth" });
+        }).catch(function (e) { flash(e.message, false); });
+      }
+      function cancelEdit() {
+        editingId = null;
+        document.getElementById("edit-heading").style.display = "none";
+        document.getElementById("edit-box").style.display = "none";
+      }
+      function saveEdit() {
+        if (!editingId) return;
+        var q = {
+          title: document.getElementById("e-title").value.trim(),
+          body: document.getElementById("e-body").value.trim() || null,
+          group_id: parseInt(document.getElementById("e-group").value) || null,
+          author: document.getElementById("e-author").value.trim() || null,
+          status: document.getElementById("e-status").value,
+        };
+        if (!q.title) return flash("Título obrigatório", false);
+        api("/api/admin/questions/" + editingId, "PATCH", q).then(function () {
+          flash("Pergunta atualizada", true);
+          loadQuestions();
+        }).catch(function (e) { flash(e.message, false); });
+      }
+      function renderEditAnswers(answers) {
+        var box = document.getElementById("e-answers");
+        if (!answers.length) {
+          box.innerHTML = "<p><small>Sem respostas ainda.</small></p>";
+          return;
+        }
+        box.innerHTML = answers.map(function (a) {
+          return '<div class="pair" id="ans-' + a.id + '">' +
+            "<label>Resposta</label><textarea data-f=body>" + escHtml(a.body || "") + "</textarea>" +
+            '<div class="row"><div><label>Autor</label><input value="' + escAttr(a.author || "") + '" data-f=author></div>' +
+            '<div><label>Aceita?</label><select data-f=accepted><option value="true"' +
+            (a.is_accepted ? " selected" : "") + '>Sim</option><option value="false"' +
+            (!a.is_accepted ? " selected" : "") + ">Não</option></select></div></div>" +
+            '<button onclick="saveEditAnswer(' + a.id + ')">Salvar</button> ' +
+            '<button class="secondary" onclick="delEditAnswer(' + a.id + ')">Excluir</button></div>';
+        }).join("");
+      }
+      function saveEditAnswer(aid) {
+        var root = document.getElementById("ans-" + aid);
+        var body = fieldVal(root, "body");
+        var author = fieldVal(root, "author");
+        var accepted = root.querySelector("[data-f=accepted]").value === "true";
+        if (!body) return flash("Resposta não pode ficar vazia", false);
+        api("/api/admin/answers/" + aid, "PATCH", { body: body, author: author, is_accepted: accepted })
+          .then(function () { flash("Resposta atualizada", true); loadQuestions(); })
+          .catch(function (e) { flash(e.message, false); });
+      }
+      function delEditAnswer(aid) {
+        api("/api/admin/answers/" + aid, "DELETE").then(function () {
+          document.getElementById("ans-" + aid).remove();
+          flash("Resposta excluída", true);
+          loadQuestions();
+        }).catch(function (e) { flash(e.message, false); });
+      }
+      function addEditAnswer() {
+        if (!editingId) return;
+        var body = document.getElementById("e-new-answer").value.trim();
+        if (!body) return flash("Digite a resposta", false);
+        api("/api/admin/questions/" + editingId + "/answers", "POST", { body: body, is_accepted: false })
+          .then(function () {
+            document.getElementById("e-new-answer").value = "";
+            flash("Resposta adicionada", true);
+            return editQuestion(editingId);
+          }).catch(function (e) { flash(e.message, false); });
       }
 
       function doIngest() {
