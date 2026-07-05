@@ -142,8 +142,8 @@
       var auth = null;
       function creds() {
         if (!auth) {
-          var u = prompt("Usuário admin:");
-          var p = prompt("Senha admin:");
+          var u = (prompt("Usuário admin:") || "").trim();
+          var p = (prompt("Senha admin:") || "").trim();
           auth = "Basic " + btoa(u + ":" + p);
         }
         return auth;
