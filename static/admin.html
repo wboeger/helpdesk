@@ -51,8 +51,20 @@
   </head>
   <body>
     <h1>Helpdesk — Administração</h1>
-    <p><small>As credenciais são pedidas pelo navegador (HTTP Basic) na primeira ação.</small></p>
+    <p><small>As credenciais são pedidas na primeira ação.</small></p>
     <div id="msg" class="msg"></div>
+
+    <div id="login-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+      <form id="login-form" style="background:#fff; padding:1.5rem; border-radius:10px; max-width:340px; width:90%;">
+        <h2 style="margin-top:0;">Entrar</h2>
+        <label>Usuário admin</label>
+        <input id="login-user" type="text" autocapitalize="none" autocorrect="off" autocomplete="username" spellcheck="false" />
+        <label>Senha admin</label>
+        <input id="login-pass" type="password" autocapitalize="none" autocorrect="off" autocomplete="current-password" spellcheck="false" />
+        <div id="login-err" style="color:#991b1b; font-size:0.85rem; margin-top:0.6rem; display:none;">Credenciais inválidas</div>
+        <button type="submit">Entrar</button>
+      </form>
+    </div>
 
     <h2>1. Importar conteúdo (WhatsApp ou qualquer texto)</h2>
     <fieldset>
@@ -139,30 +151,47 @@
 
     <script>
       // Credentials are cached in memory only, sent as HTTP Basic on each call.
+      // A real login form is used (not prompt()) so mobile keyboards cannot
+      // auto-capitalise or smart-punctuate the user/password into 401s.
       var auth = null;
+      // UTF-8 safe base64 so non-Latin1 credentials don't throw in btoa().
+      function b64(s) { return btoa(unescape(encodeURIComponent(s))); }
       function creds() {
-        if (!auth) {
-          var u = (prompt("Usuário admin:") || "").trim();
-          var p = (prompt("Senha admin:") || "").trim();
-          auth = "Basic " + btoa(u + ":" + p);
-        }
-        return auth;
+        if (auth) return Promise.resolve(auth);
+        return new Promise(function (resolve) {
+          var overlay = document.getElementById("login-overlay");
+          var form = document.getElementById("login-form");
+          overlay.style.display = "flex";
+          document.getElementById("login-user").focus();
+          form.onsubmit = function (e) {
+            e.preventDefault();
+            var u = document.getElementById("login-user").value.trim();
+            var p = document.getElementById("login-pass").value.trim();
+            auth = "Basic " + b64(u + ":" + p);
+            overlay.style.display = "none";
+            document.getElementById("login-err").style.display = "none";
+            resolve(auth);
+          };
+        });
       }
       function api(path, method, body) {
+        return creds().then(function (authHeader) {
         return fetch(path, {
           method: method || "GET",
           headers: {
             "Content-Type": "application/json",
-            Authorization: creds(),
+            Authorization: authHeader,
           },
           body: body ? JSON.stringify(body) : undefined,
         }).then(function (r) {
           if (r.status === 401) {
             auth = null;
+            document.getElementById("login-err").style.display = "block";
             throw new Error("Credenciais inválidas");
           }
           if (!r.ok) return r.json().then(function (e) { throw new Error(e.detail || r.status); });
           return r.json();
+        });
         });
       }
       function flash(text, ok) {
